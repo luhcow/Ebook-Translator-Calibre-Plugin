@@ -531,6 +531,35 @@ class TestChatgptTranslate(unittest.TestCase):
 
         self.assertEqual('你好世界！', result)
 
+    @patch(module_name + '.openai.EbookTranslator')
+    @patch(module_name + '.base.request')
+    def test_translate_stream_with_reasoning_content(
+            self, mock_request, mock_et):
+        """Thinking mode (deepseek-reasoner/v4-pro) streams reasoning_content
+        chunks with content=null before the final answer. Ensure None is never
+        yielded and only the final content is returned.
+        """
+        mock_et.__version__ = '1.0.0'
+        reasoning_chunks = [
+            b'data: {"choices":[{"delta":{"content":null,'
+            b'"reasoning_content":"thinking %d"}}]}' % i
+            for i in range(3)
+        ]
+        answer_chunks = [
+            b'data: {"choices":[{"delta":{"content":"%b"}}]}' % c.encode()
+            for c in '你好世界！'
+        ]
+        mock_response = Mock()
+        mock_response.readline.side_effect = \
+            reasoning_chunks + answer_chunks + ['data: [DONE]'.encode()]
+        mock_request.return_value = mock_response
+
+        result = self.translator.translate('Hello World!')
+        self.assertIsInstance(result, GeneratorType)
+        joined = ''.join(result)
+        self.assertEqual('你好世界！', joined)
+        self.assertNotIn('None', joined)
+
 
 class TestChatgptBatchTranslate(unittest.TestCase):
     def setUp(self):

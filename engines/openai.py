@@ -158,8 +158,14 @@ class ChatgptTranslate(GenAI):
                     if 'choices' in data and len(data['choices']) > 0:
                         choice = data['choices'][0]
                         # Standard streaming format
-                        if 'delta' in choice and 'content' in choice['delta']:
-                            content = choice['delta']['content']
+                        if 'delta' in choice:
+                            delta = choice['delta']
+                            # Skip reasoning_content (thinking mode) chunks
+                            # to avoid yielding None when content is null.
+                            reasoning = delta.get('reasoning_content')
+                            if reasoning:
+                                continue
+                            content = delta.get('content')
                             if content:
                                 yield str(content)
                         # Alternative streaming format
