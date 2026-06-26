@@ -240,6 +240,9 @@ class PageElement(Element):
 
     def _polish_translation(self, translation):
         translation = translation.replace('\n', '<br/>')
+        # Strip Markdown emphasis markers that AI models may inject.
+        translation = re.sub(r'\*\*(.+?)\*\*', r'\1', translation)
+        translation = re.sub(r'(?<!\w)__(.+?)__(?!\w)', r'\1', translation)
         # Condense consecutive letters to a maximum of four.
         return re.sub(r'((\w)\2{3})\2*', r'\1', translation)
 
@@ -794,16 +797,10 @@ class ElementHandlerMerge(ElementHandler):
         translations: list[Any] = translation.strip().split(self.separator)
         offset = len(originals) - len(translations)
         if offset > 0:
-            if self.position in ['left', 'right']:
-                addition = [None] * offset
-                translations += addition
-            else:
-                merged_translations = '\n\n'.join(translations)
-                translations = [None] * (len(originals) - 1)
-                if self.position in ['above']:
-                    translations.insert(0, merged_translations)
-                else:
-                    translations.append(merged_translations)
+            # Pad with None for missing segments instead of concatenating
+            # all translations into one element (which caused translation
+            # loss for N-1 paragraphs).
+            translations += [None] * offset
         elif offset < 0:
             offset = len(originals) - 1
             translations = translations[:offset] + [

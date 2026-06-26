@@ -40,8 +40,10 @@ class ChatgptTranslate(GenAI):
         'answer do not add any prefix or suffix to the translated content. '
         'Websites\' URLs/addresses should be preserved as is in the '
         'translation\'s output. Do not omit any part of the content, even if '
-        'it seems unimportant. RESPOND ONLY with the translation text, no '
-        'formatting, no explanations, no additional commentary whatsoever. ')
+        'it seems unimportant. Do not use Markdown formatting (such as **, '
+        '*, #, _, or ~) in the translation. RESPOND ONLY with the translation '
+        'text, no formatting, no explanations, no additional commentary '
+        'whatsoever. ')
 
     samplings = ['temperature', 'top_p']
     sampling = 'temperature'
@@ -80,7 +82,9 @@ class ChatgptTranslate(GenAI):
         # Recommend setting temperature to 0.5 for retaining the placeholder.
         if self.merge_enabled:
             prompt += (' Ensure that placeholders matching the pattern '
-                       '{{id_\\d+}} in the content are retained.')
+                       '{{id_\\d+}} in the content are retained. Preserve '
+                       'the double line breaks between paragraphs exactly as '
+                       'they appear in the input to keep segment alignment.')
         return prompt
 
     def get_headers(self):

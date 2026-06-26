@@ -339,7 +339,8 @@ class GeminiTranslate(GenAI):
         'answer do not add any prefix or suffix to the translated content. '
         'Websites\' URLs/addresses should be preserved as is in the '
         'translation\'s output. Do not omit any part of the content, even if '
-        'it seems unimportant. ')
+        'it seems unimportant. Do not use Markdown formatting (such as **, '
+        '*, #, _, or ~) in the translation. ')
     temperature: float = 0.9
     top_p: float = 1.0
     top_k = 1
@@ -368,7 +369,9 @@ class GeminiTranslate(GenAI):
         if self.merge_enabled:
             prompt += (
                 ' Ensure that placeholders matching the pattern {{id_\\d+}} '
-                'in the content are retained.')
+                'in the content are retained. Preserve the double line '
+                'breaks between paragraphs exactly as they appear in the '
+                'input to keep segment alignment.')
         return prompt + ' Start translating: ' + text
 
     def get_models(self):
