@@ -761,7 +761,7 @@ class ElementHandlerMerge(ElementHandler):
             element.set_remove_pattern(self.remove_pattern)
             element.set_reserve_pattern(self.reserve_pattern)
             code = element.get_raw()
-            content = element.get_content()
+            content = '%d:%s' % (eid, element.get_content())
             content += self.separator
             if len(txt + content) < self.merge_length:
                 raw += code + self.separator
@@ -778,7 +778,61 @@ class ElementHandlerMerge(ElementHandler):
             self.originals.append((oid, md5, raw, txt, False))
         return self.originals
 
+    def _parse_line_markers(self, text):
+        """Parse 'N:content' line markers from text. Returns {N: content}
+        or None if no line markers are found. Only lines starting with
+        digits followed by a colon are treated as markers; continuation
+        lines are included in the preceding paragraph's content.
+        """
+        pattern = re.compile(r'^(\d+):(.*)$', re.MULTILINE)
+        matches = list(pattern.finditer(text))
+        if not matches:
+            return None
+        result = {}
+        for i, match in enumerate(matches):
+            num = match.group(1)
+            start = match.start(2)
+            end = matches[i + 1].start() if i + 1 < len(matches) \
+                else len(text)
+            content = text[start:end].strip(self.separator).strip()
+            result[num] = content
+        return result
+
     def align_paragraph(self, paragraph):
+        # Try line-number anchor alignment first.
+        orig_map = self._parse_line_markers(paragraph.original)
+        if orig_map is not None:
+            line_map = None
+            if paragraph.translation is not None:
+                line_map = self._parse_line_markers(paragraph.translation)
+            result = []
+            orig_items = list(orig_map.items())
+            if line_map is not None:
+                # Translation has line markers: match by eid.
+                for eid_str, orig_text in orig_items:
+                    trans = line_map.get(eid_str)
+                    result.append((int(eid_str), orig_text, trans))
+                return result
+            # Translation lacks line markers: match by position.
+            if paragraph.translation is None:
+                for eid_str, orig_text in orig_items:
+                    result.append((int(eid_str), orig_text, None))
+                return result
+            pattern = re.compile('%s+' % self.separator)
+            translation = pattern.sub(
+                self.separator, paragraph.translation)
+            translations = translation.strip().split(self.separator)
+            offset = len(orig_items) - len(translations)
+            if offset > 0:
+                translations += [None] * offset
+            elif offset < 0:
+                cut = len(orig_items) - 1
+                translations = translations[:cut] + [
+                    self.separator.join(translations[cut:])]
+            for i, (eid_str, orig_text) in enumerate(orig_items):
+                result.append((int(eid_str), orig_text, translations[i]))
+            return result
+        # Fallback: existing \n\n logic for cached/old translations.
         # Compatible with using the placeholder as the separator.
         if paragraph.original[-2:] != self.separator:
             pattern = re.compile(
@@ -810,8 +864,32 @@ class ElementHandlerMerge(ElementHandler):
     def prepare_translation(self, paragraphs):
         translations = []
         for paragraph in paragraphs:
-            translations.extend(self.align_paragraph(paragraph))
+            aligned = self.align_paragraph(paragraph)
+            for item in aligned:
+                if len(item) == 3:
+                    eid, orig, trans = item
+                    translations.append((eid, (orig, trans)))
+                else:
+                    orig, trans = item
+                    translations.append((orig, trans))
         return dict(translations)
+
+    def add_translations(self, paragraphs):
+        translations = self.prepare_translation(paragraphs)
+        for eid, element in self.elements.copy().items():
+            if element.ignored:
+                element.add_translation()
+                continue
+            entry = translations.get(eid)
+            if entry is not None:
+                trans = entry[1] if isinstance(entry, tuple) else entry
+            else:
+                trans = translations.get(element.get_content())
+            if trans is None:
+                element.add_translation()
+                continue
+            element.add_translation(trans)
+            self.elements.pop(eid)
 
 
 def get_srt_elements(path, encoding):

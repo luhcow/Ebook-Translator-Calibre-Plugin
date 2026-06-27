@@ -82,9 +82,12 @@ class ChatgptTranslate(GenAI):
         # Recommend setting temperature to 0.5 for retaining the placeholder.
         if self.merge_enabled:
             prompt += (' Ensure that placeholders matching the pattern '
-                       '{{id_\\d+}} in the content are retained. Preserve '
-                       'the double line breaks between paragraphs exactly as '
-                       'they appear in the input to keep segment alignment.')
+                       '{{id_\\d+}} in the content are retained. Each '
+                       'paragraph is prefixed with a line number followed '
+                       'by a colon (e.g., "1:text"). Preserve the line '
+                       'number prefix exactly as given for each translated '
+                       'paragraph. Keep the double line breaks between '
+                       'paragraphs.')
         return prompt
 
     def get_headers(self):

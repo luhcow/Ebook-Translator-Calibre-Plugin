@@ -56,6 +56,10 @@ class Paragraph:
         # Check if translation is aligned with original
         if self.translation is None or self.is_alignment(separator):
             return
+        # Line-number anchor mode produces precise alignment; skip
+        # the heuristic fix.
+        if re.search(r'^\d+:', self.translation, re.MULTILINE):
+            return
         # Auto-add line spacing to translation text
         single_saparator = separator[0]
         lines = self.translation.split(single_saparator)

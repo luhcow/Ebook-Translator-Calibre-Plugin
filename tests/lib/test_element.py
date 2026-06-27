@@ -1512,6 +1512,130 @@ class TestElementHandlerMerge(unittest.TestCase):
             [('a', 'A'), ('b', 'B'), ('c', None)],
             self.handler.align_paragraph(paragraph))
 
+    def test_align_with_line_markers(self):
+        """All paragraphs have line markers — perfect eid alignment."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0:A\n\n1:B\n\n3:C\n\n', 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'a', 'A'), (1, 'b', 'B'), (3, 'c', 'C')],
+            self.handler.align_paragraph(paragraph))
+
+    def test_align_line_markers_merged(self):
+        """AI merged paragraphs 1+3 into one — eid 3 gets None, no cascade."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0:A\n\n1:B C\n\n', 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'a', 'A'), (1, 'b', 'B C'), (3, 'c', None)],
+            self.handler.align_paragraph(paragraph))
+
+    def test_align_line_markers_missing(self):
+        """AI dropped paragraph 1 — eid 1 gets None, eid 3 still aligns."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0:A\n\n3:C\n\n', 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'a', 'A'), (1, 'b', None), (3, 'c', 'C')],
+            self.handler.align_paragraph(paragraph))
+
+    def test_align_line_markers_fallback(self):
+        """Translation has no line markers — fall back to position match
+        but still parse eids from the original."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            'A\n\nB\n\nC\n\n', 'ENGINE', 'LANG')
+        result = self.handler.align_paragraph(paragraph)
+        self.assertEqual(
+            [(0, 'a', 'A'), (1, 'b', 'B'), (3, 'c', 'C')],
+            result)
+
+    def test_align_line_markers_fallback_merged(self):
+        """Translation has no line markers and AI merged segments —
+        position-based fallback with eid from original."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            'A B\n\nC\n\n', 'ENGINE', 'LANG')
+        result = self.handler.align_paragraph(paragraph)
+        self.assertEqual(
+            [(0, 'a', 'A B'), (1, 'b', 'C'), (3, 'c', None)],
+            result)
+
+    def test_align_line_markers_multiline(self):
+        """Paragraph content contains internal newlines."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw',
+            '0:hello\nworld\n\n1:foo\n\n', False, None, None,
+            '0:你好\n世界\n\n1:bar\n\n', 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'hello\nworld', '你好\n世界'), (1, 'foo', 'bar')],
+            self.handler.align_paragraph(paragraph))
+
+    def test_align_line_markers_no_translation(self):
+        """Translation is None — all segments get None."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            None, 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'a', None), (1, 'b', None), (3, 'c', None)],
+            self.handler.align_paragraph(paragraph))
+
+    def test_add_translations_merge_line_markers(self):
+        """Full integration: eid-prefixed original and translation."""
+        self.handler.separator = Base.separator
+        self.handler.prepare_original(self.elements)
+        self.handler.add_translations([Paragraph(
+            0, 'm1', '<p id="a">a</p><p id="b">b</p><p id="c">c</p>',
+            '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0:A\n\n1:B\n\n3:C\n\n', 'ENGINE', 'LANG')])
+
+        elements = self.xhtml.findall('./x:body/*', namespaces=ns)
+        self.assertEqual(8, len(elements))
+        self.assertEqual('a', elements[0].text)
+        self.assertEqual('A', elements[1].text)
+        self.assertEqual('b', elements[2].text)
+        self.assertEqual('B', elements[3].text)
+        self.assertEqual('c', elements[5].text)
+        self.assertEqual('C', elements[6].text)
+
+    def test_add_translations_merge_line_markers_merged(self):
+        """AI merged paragraphs 1+3 — eid 3 gets None, no cascade."""
+        self.handler.separator = Base.separator
+        self.handler.prepare_original(self.elements)
+        self.handler.add_translations([Paragraph(
+            0, 'm1', '<p id="a">a</p><p id="b">b</p><p id="c">c</p>',
+            '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0:A\n\n1:B C\n\n', 'ENGINE', 'LANG')])
+
+        elements = self.xhtml.findall('./x:body/*', namespaces=ns)
+        # a→A (new p), b→"B C" (new p), c→None (original stays); 7 total
+        self.assertEqual(7, len(elements))
+        self.assertEqual('a', elements[0].text)
+        self.assertEqual('A', elements[1].text)
+        self.assertEqual('b', elements[2].text)
+        self.assertEqual('B C', elements[3].text)
+        # c has no translation, stays as original
+        self.assertEqual('c', elements[-2].text)
+
+    def test_add_translations_merge_line_markers_missing(self):
+        """AI dropped paragraph 1 — eid 1 gets None, eid 3 still aligns."""
+        self.handler.separator = Base.separator
+        self.handler.prepare_original(self.elements)
+        self.handler.add_translations([Paragraph(
+            0, 'm1', '<p id="a">a</p><p id="b">b</p><p id="c">c</p>',
+            '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0:A\n\n3:C\n\n', 'ENGINE', 'LANG')])
+
+        elements = self.xhtml.findall('./x:body/*', namespaces=ns)
+        # a→A (new p), b→None (original stays), c→C (new p); 7 total
+        self.assertEqual(7, len(elements))
+        self.assertEqual('a', elements[0].text)
+        self.assertEqual('A', elements[1].text)
+        # b has no translation, stays as original
+        self.assertEqual('b', elements[2].text)
+        self.assertEqual('c', elements[4].text)
+        self.assertEqual('C', elements[5].text)
+
     @patch('calibre_plugins.ebook_translator.lib.element.uid')
     def test_prepare_original_merge_separator(self, mock_uid):
         mock_uid.return_value = 'm1'
@@ -1524,7 +1648,7 @@ class TestElementHandlerMerge(unittest.TestCase):
         self.handler.load_reserve_rules()
         self.assertEqual([(
             0, 'm1', '<p id="a">a</p>\n\n<p id="b">b</p>\n\n<p id="c" '
-            'class="c">c</p>\n\n', 'a\n\nb\n\nc\n\n', False)],
+            'class="c">c</p>\n\n', '0:a\n\n1:b\n\n3:c\n\n', False)],
             self.handler.prepare_original(self.elements))
         for element in [e for e in self.elements if not e.ignored]:
             with self.subTest(element=element):
@@ -1541,9 +1665,9 @@ class TestElementHandlerMerge(unittest.TestCase):
         self.handler.merge_length = 2
         self.handler.separator = Base.separator
         items = [
-            (0, 'm1', '<p id="a">a</p>', 'a\n\n', False),
-            (1, 'm2', '<p id="b">b</p>', 'b\n\n', False),
-            (2, 'm3', '<p id="c" class="c">c</p>', 'c\n\n', False)]
+            (0, 'm1', '<p id="a">a</p>', '0:a\n\n', False),
+            (1, 'm2', '<p id="b">b</p>', '1:b\n\n', False),
+            (2, 'm3', '<p id="c" class="c">c</p>', '3:c\n\n', False)]
         self.assertEqual(items, self.handler.prepare_original(self.elements))
 
     def test_prepare_translation(self):
@@ -1713,9 +1837,11 @@ class TestElementHandlerMerge(unittest.TestCase):
 
         elements = self.xhtml.findall('./x:body/*', namespaces=ns)
         self.assertEqual(5, len(elements))
-        self.assertEqual(
-            '<p id="c" class="c" dir="auto">A B<br/><br/>C</p>',
-            get_string(elements[-2], True))
+        # AI merged a+b into "A B"; position-based fallback assigns
+        # "A B" to a, "C" to b, and None to c (no cascading).
+        self.assertEqual('A B', elements[0].text)
+        self.assertEqual('C', elements[1].text)
+        self.assertEqual('c', elements[-2].text)
 
     def test_add_translations_merge_separator_only_missing_id(self):
         self.handler.position = 'only'
@@ -1730,6 +1856,6 @@ class TestElementHandlerMerge(unittest.TestCase):
         elements = self.xhtml.findall('./x:body/*', namespaces=ns)
 
         self.assertEqual(5, len(elements))
-        self.assertEqual(
-            '<p id="c" class="c" dir="auto">A B<br/><br/>C</p>',
-            get_string(elements[-2], True))
+        self.assertEqual('A B', elements[0].text)
+        self.assertEqual('C', elements[1].text)
+        self.assertEqual('c', elements[-2].text)
