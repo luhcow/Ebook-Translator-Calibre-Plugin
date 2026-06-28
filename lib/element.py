@@ -20,6 +20,35 @@ def get_string(element, remove_ns=False):
     return re.sub(r'\sxmlns="[^"]+"', '', markup) if remove_ns else markup
 
 
+def get_inner_html(element):
+    """Serialize an element's inner HTML, preserving child tag structure."""
+    parts = []
+    if element.text:
+        parts.append(element.text)
+    for child in element:
+        parts.append(get_string(child, remove_ns=True))
+        if child.tail:
+            parts.append(child.tail)
+    return trim(''.join(parts))
+
+
+def parse_line_segments(text):
+    """Parse 'id | text' LINE format. Returns {str_id: text} or None."""
+    if text is None:
+        return None
+    pattern = re.compile(r'^\s*(\d+)\s*\|\s*(.*)', re.MULTILINE)
+    matches = list(pattern.finditer(text))
+    if not matches:
+        return None
+    result = {}
+    for match in matches:
+        eid = match.group(1)
+        content = re.sub(
+            r'<br\s*/?>', '\n', match.group(2).strip(), flags=re.I)
+        result[eid] = content
+    return result
+
+
 def get_name(element):
     return etree.QName(element).localname
 
@@ -236,7 +265,7 @@ class PageElement(Element):
                     elements[eid] = element = parent
             self.reserve_elements.append(get_string(element, True))
             self._safe_remove(element, replacement)
-        return trim(''.join(element_copy.itertext()))
+        return get_inner_html(element_copy)
 
     def _polish_translation(self, translation):
         translation = translation.replace('\n', '<br/>')
@@ -292,18 +321,23 @@ class PageElement(Element):
                 self._safe_remove(self.element)
             return
 
-        # Escape the markups (<m id=1 />) to replace escaped markups.
-        translation = xml_escape(translation)
+        # Replace placeholders with reserved elements' HTML.
         for rid, element in enumerate(self.reserve_elements):
             pattern = self.placeholder[1].format(
                 r'\s*'.join(format(rid, '05')))
-            # Prevent processe any backslash escapes in the replacement.
+            # Prevent processing any backslash escapes in the replacement.
             translation = re.sub(
-                xml_escape(pattern), lambda _: element, translation)
+                pattern, lambda _: element, translation)
         translation = self._polish_translation(translation)
 
         element_name = get_name(self.element)
-        new_element = self._create_new_element(element_name, translation)
+        try:
+            new_element = self._create_new_element(element_name, translation)
+        except etree.XMLSyntaxError:
+            # Fall back: escape everything as plain text if the AI
+            # returned invalid XML/HTML.
+            new_element = self._create_new_element(
+                element_name, xml_escape(translation))
 
         # Add translation for table elements.
         group_elements = ('li', 'th', 'td', 'caption')
@@ -723,7 +757,12 @@ class ElementHandler:
     def prepare_translation(self, paragraphs):
         translations = {}
         for paragraph in paragraphs:
-            translations[paragraph.original] = paragraph.translation
+            trans = paragraph.translation
+            if trans is not None:
+                line_map = parse_line_segments(trans)
+                if line_map is not None and '0' in line_map:
+                    trans = line_map['0']
+            translations[paragraph.original] = trans
         return translations
 
     def add_translations(self, paragraphs):
@@ -804,7 +843,11 @@ class ElementHandlerMerge(ElementHandler):
         if orig_map is not None:
             line_map = None
             if paragraph.translation is not None:
-                line_map = self._parse_line_markers(paragraph.translation)
+                # Try LINE format (id | text) first, then old format (id:text).
+                line_map = parse_line_segments(paragraph.translation)
+                if line_map is None:
+                    line_map = self._parse_line_markers(
+                        paragraph.translation)
             result = []
             orig_items = list(orig_map.items())
             if line_map is not None:

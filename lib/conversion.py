@@ -63,6 +63,11 @@ def convert_book(
         log.info(debug_info)
         translation.set_progress(self.report_progress)
 
+        title = str(oeb.metadata.title[0]) if oeb.metadata.title else ''
+        description = str(oeb.metadata.description[0]) \
+            if oeb.metadata.description else ''
+        translation.set_context(title, description)
+
         elements.extend(get_metadata_elements(oeb.metadata))
         # The number of elements may vary with format conversion.
         elements.extend(get_toc_elements(oeb.toc.nodes, []))

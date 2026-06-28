@@ -9,7 +9,8 @@ from calibre.ebooks.oeb.base import TOC, Metadata  # type: ignore
 from ...lib.utils import ns, create_xpath
 from ...lib.cache import Paragraph
 from ...lib.element import (
-    get_string, get_name, Extraction, ElementHandler, ElementHandlerMerge,
+    get_string, get_name, parse_line_segments,
+    Extraction, ElementHandler, ElementHandlerMerge,
     Element, SrtElement, PgnElement, TocElement, PageElement, MetadataElement,
     get_srt_elements, get_pgn_elements, get_toc_elements,
     get_metadata_elements)
@@ -40,6 +41,17 @@ class TestFunction(unittest.TestCase):
     def test_get_name(self):
         xhtml = '<p xmlns="http://www.w3.org/1999/xhtml">a</p>'
         self.assertEqual('p', get_name(etree.XML(xhtml)))
+
+    def test_parse_line_segments(self):
+        self.assertIsNone(parse_line_segments(None))
+        self.assertIsNone(parse_line_segments('plain text'))
+        self.assertIsNone(parse_line_segments('0:text'))
+        result = parse_line_segments('0 | Hello\n1 | World')
+        self.assertEqual({'0': 'Hello', '1': 'World'}, result)
+        result = parse_line_segments('0 | Line 1<br>Line 2\n1 | Foo')
+        self.assertEqual({'0': 'Line 1\nLine 2', '1': 'Foo'}, result)
+        result = parse_line_segments('  3  |  Spaced  ')
+        self.assertEqual({'3': 'Spaced'}, result)
 
     @patch('calibre_plugins.ebook_translator.lib.element.open_file')
     def test_get_srt_elements(self, mock_open_file):
@@ -421,8 +433,9 @@ class TestPageElement(unittest.TestCase):
 
     def test_get_content(self):
         content = (
-            '{{id_00000}} a {{id_00001}} b c {{id_00002}} d e '
-            '{{id_00003}} f g {{id_00004}} h {{id_00005}} i '
+            '{{id_00000}} a {{id_00001}} <ruby>b</ruby> c '
+            '<span>{{id_00002}} d</span> <span>e {{id_00003}}</span> f '
+            '<span>g {{id_00004}} h</span> {{id_00005}} i '
             '{{id_00006}} {{id_00007}} k{{id_00008}} l')
         self.assertEqual(content, self.element.get_content())
         self.assertEqual(9, len(self.element.reserve_elements))
@@ -463,7 +476,8 @@ class TestPageElement(unittest.TestCase):
         element.reserve_pattern = create_xpath(('sup',))
         element.placeholder = Base.placeholder
         content = (
-            'a{{id_00000}} b{{id_00001}} x cx {{id_00002}} d{{id_00003}} x')
+            'a{{id_00000}} b<a>{{id_00001}} <span>x</span></a> '
+            'c<a>x {{id_00002}}</a> d<a>{{id_00003}} x</a>')
         self.assertEqual(content, element.get_content())
         self.assertEqual('<a><sup>[1]</sup></a>', element.reserve_elements[0])
         self.assertEqual('<sup>[1]</sup>', element.reserve_elements[1])
@@ -1537,6 +1551,42 @@ class TestElementHandlerMerge(unittest.TestCase):
             '0:A\n\n3:C\n\n', 'ENGINE', 'LANG')
         self.assertEqual(
             [(0, 'a', 'A'), (1, 'b', None), (3, 'c', 'C')],
+            self.handler.align_paragraph(paragraph))
+
+    def test_align_line_format(self):
+        """LINE format (id | text) alignment — all segments present."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0 | A\n1 | B\n3 | C\n', 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'a', 'A'), (1, 'b', 'B'), (3, 'c', 'C')],
+            self.handler.align_paragraph(paragraph))
+
+    def test_align_line_format_missing(self):
+        """LINE format — AI dropped paragraph 1."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0 | A\n3 | C\n', 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'a', 'A'), (1, 'b', None), (3, 'c', 'C')],
+            self.handler.align_paragraph(paragraph))
+
+    def test_align_line_format_merged(self):
+        """LINE format — AI merged paragraphs 1+3 into one line."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:a\n\n1:b\n\n3:c\n\n', False, None, None,
+            '0 | A\n1 | B C\n', 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'a', 'A'), (1, 'b', 'B C'), (3, 'c', None)],
+            self.handler.align_paragraph(paragraph))
+
+    def test_align_line_format_br_newline(self):
+        """LINE format — <br> in translation is converted to newline."""
+        paragraph = Paragraph(
+            0, 'm1', 'raw', '0:line1\nline2\n\n', False, None, None,
+            '0 | 第一行<br>第二行\n', 'ENGINE', 'LANG')
+        self.assertEqual(
+            [(0, 'line1\nline2', '第一行\n第二行')],
             self.handler.align_paragraph(paragraph))
 
     def test_align_line_markers_fallback(self):

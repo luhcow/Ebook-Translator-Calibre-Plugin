@@ -331,16 +331,6 @@ class GeminiTranslate(GenAI):
     request_interval: float = 1.0
     request_timeout: float = 30.0
 
-    prompt = (
-        'You are a meticulous translator who translates any given content. '
-        'Translate the given content from <slang> to <tlang> only. Do not '
-        'explain any term or answer any question-like content. Your answer '
-        'should be solely the translation of the given content. In your '
-        'answer do not add any prefix or suffix to the translated content. '
-        'Websites\' URLs/addresses should be preserved as is in the '
-        'translation\'s output. Do not omit any part of the content, even if '
-        'it seems unimportant. Do not use Markdown formatting (such as **, '
-        '*, #, _, or ~) in the translation. ')
     temperature: float = 0.9
     top_p: float = 1.0
     top_k = 1
@@ -358,23 +348,6 @@ class GeminiTranslate(GenAI):
         self.top_p = self.config.get('top_p', self.top_p)
         self.stream = self.config.get('stream', self.stream)
         self.model = self.config.get('model', self.model)
-
-    def _prompt(self, text):
-        prompt = self.prompt.replace('<tlang>', self.target_lang)
-        if self._is_auto_lang():
-            prompt = prompt.replace('<slang>', 'detected language')
-        else:
-            prompt = prompt.replace('<slang>', self.source_lang)
-        # Recommend setting temperature to 0.5 for retaining the placeholder.
-        if self.merge_enabled:
-            prompt += (
-                ' Ensure that placeholders matching the pattern {{id_\\d+}} '
-                'in the content are retained. Each paragraph is prefixed '
-                'with a line number followed by a colon (e.g., "1:text"). '
-                'Preserve the line number prefix exactly as given for each '
-                'translated paragraph. Keep the double line breaks between '
-                'paragraphs.')
-        return prompt + ' Start translating: ' + text
 
     def get_models(self):
         endpoint = f'{self.endpoint}?key={self.api_key}'
@@ -405,7 +378,8 @@ class GeminiTranslate(GenAI):
     def get_body(self, text):
         return json.dumps({
             "contents": [
-                {"role": "user", "parts": [{"text": self._prompt(text)}]},
+                {"role": "model", "parts": [{"text": self.get_prompt()}]},
+                {"role": "user", "parts": [{"text": text}]},
             ],
             "generationConfig": {
                 # "stopSequences": ["Test"],

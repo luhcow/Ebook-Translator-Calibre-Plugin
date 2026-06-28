@@ -88,6 +88,9 @@ class Translation:
         self.progress_bar = ProgressBar()
         self.abort_count = 0
 
+        self.context_title = ''
+        self.context_description = ''
+
     def set_fresh(self, fresh):
         self.fresh = fresh
 
@@ -108,6 +111,10 @@ class Translation:
 
     def set_cancel_request(self, cancel_request):
         self.cancel_request = cancel_request
+
+    def set_context(self, title='', description=''):
+        self.context_title = title or ''
+        self.context_description = description or ''
 
     def need_stop(self):
         # Cancel the request if there are more than max continuous errors.
@@ -152,6 +159,43 @@ class Translation:
             time.sleep(interval)
             return self.translate_text(row, text, retry, interval)
 
+    def _build_line_request(self, original):
+        """Build a LINE protocol JSON request from paragraph original text.
+
+        For merge mode, the original is in "eid:content" format separated by
+        the translator's separator. For non-merge mode, it is plain text.
+        """
+        segments = []
+        if self.translator.merge_enabled:
+            pattern = re.compile(r'^(\d+):(.*)$', re.MULTILINE)
+            matches = list(pattern.finditer(original))
+            if matches:
+                for i, match in enumerate(matches):
+                    eid = int(match.group(1))
+                    start = match.start(2)
+                    end = matches[i + 1].start() if i + 1 < len(matches) \
+                        else len(original)
+                    content = original[start:end]
+                    content = content.strip(
+                        self.translator.separator).strip()
+                    content = self.glossary.replace(content)
+                    segments.append({'id': eid, 'text': content})
+            else:
+                text = self.glossary.replace(original)
+                segments.append({'id': 0, 'text': text})
+        else:
+            text = self.glossary.replace(original)
+            segments.append({'id': 0, 'text': text})
+        request = {
+            'targetLanguage': self.translator.target_lang,
+            'segments': segments,
+        }
+        if self.context_title:
+            request['title'] = self.context_title
+        if self.context_description:
+            request['description'] = self.context_description
+        return json.dumps(request)
+
     def translate_paragraph(self, paragraph):
         if self.cancel_request():
             raise TranslationCanceled(_('Translation canceled.'))
@@ -160,7 +204,7 @@ class Translation:
             return
         self.streaming('')
         self.streaming(_('Translating...'))
-        text = self.glossary.replace(paragraph.original)
+        text = self._build_line_request(paragraph.original)
         translation = self.translate_text(paragraph.row, text)
         # Process streaming text
         if isinstance(translation, GeneratorType):

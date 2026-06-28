@@ -83,6 +83,10 @@ class TestTranslation(unittest.TestCase):
         self.cancel_request = Mock(return_value=False)
         self.log = Mock()
         self.translation = Translation(self.translator, self.glossary)
+        self.paragraph.original = 'Hello World'
+        self.glossary.replace.return_value = 'Hello World'
+        self.translator.target_lang = 'Chinese'
+        self.translator.merge_enabled = False
 
     def test_created_translation(self):
         self.assertIs(self.translation.translator, self.translator)
@@ -284,6 +288,8 @@ class TestTranslation(unittest.TestCase):
         self.translation.set_fresh(True)
         self.translator.separator = '\n\n'
         self.translator.merge_enabled = True
+        self.paragraph.original = '0:Hello World'
+        self.glossary.replace.return_value = 'Hello World'
 
         self.translation.translate_paragraph(self.paragraph)
 

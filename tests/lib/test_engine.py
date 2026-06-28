@@ -408,17 +408,7 @@ class TestChatgptTranslate(unittest.TestCase):
         self.translator.set_source_lang('English')
         self.translator.set_target_lang('Chinese')
 
-        self.prompt = (
-            'You are a meticulous translator who translates any given '
-            'content. Translate the given content from English to Chinese '
-            'only. Do not explain any term or answer any question-like '
-            'content. Your answer should be solely the translation of the '
-            'given content. In your answer do not add any prefix or suffix to '
-            'the translated content. Websites\' URLs/addresses should be '
-            'preserved as is in the translation\'s output. Do not omit any '
-            'part of the content, even if it seems unimportant. RESPOND ONLY '
-            'with the translation text, no formatting, no explanations, '
-            'no additional commentary whatsoever. ')
+        self.prompt = self.translator.get_prompt()
 
     def test_created_engine(self):
         self.assertIsInstance(self.translator, Base)
@@ -859,17 +849,7 @@ class TestAzureChatgptTranslate(unittest.TestCase):
     @patch(module_name + '.base.request')
     def test_translate_stream(self, mock_request):
         model = 'gpt-35-turbo'
-        prompt = (
-            'You are a meticulous translator who translates any given '
-            'content. Translate the given content from English to Chinese '
-            'only. Do not explain any term or answer any question-like '
-            'content. Your answer should be solely the translation of the '
-            'given content. In your answer do not add any prefix or suffix to '
-            'the translated content. Websites\' URLs/addresses should be '
-            'preserved as is in the translation\'s output. Do not omit any '
-            'part of the content, even if it seems unimportant. RESPOND ONLY '
-            'with the translation text, no formatting, no explanations, '
-            'no additional commentary whatsoever. ')
+        prompt = self.translator.get_prompt()
         data = json.dumps({
             'stream': True,
             'messages': [
@@ -919,16 +899,7 @@ class TestClaudeTranslate(unittest.TestCase):
     @patch(module_name + '.base.request')
     def test_translate(self, mock_request, mock_et):
         model = 'claude-3-5-sonnet-20241022'
-        prompt = (
-            'You are a meticulous translator who translates any given '
-            'content. Translate the given content from English to Chinese '
-            'only. Do not explain any term or answer any question-like '
-            'content. Your answer should be solely the translation of the '
-            'given content. In your answer '
-            'do not add any prefix or suffix to the translated content. Websites\' '
-            'URLs/addresses should be preserved as is in the translation\'s output. '
-            'Do not omit any part of the content, even if it seems unimportant. '
-            )
+        prompt = self.translator.get_prompt()
         data = json.dumps({
             'stream': False,
             'max_tokens': 4096,
@@ -981,15 +952,7 @@ class TestClaudeTranslate(unittest.TestCase):
     @patch(module_name + '.base.request')
     def test_translate_stream(self, mock_request, mock_et):
         model = 'claude-3-5-sonnet-20241022'
-        prompt = (
-            'You are a meticulous translator who translates any given '
-            'content. Translate the given content from English to Chinese '
-            'only. Do not explain any term or answer any question-like '
-            'content. Your answer should be solely the translation of the '
-            'given content. In your answer do not add any prefix or suffix to '
-            'the translated content. Websites\' URLs/addresses should be '
-            'preserved as is in the translation\'s output. Do not omit any '
-            'part of the content, even if it seems unimportant. ')
+        prompt = self.translator.get_prompt()
         data = json.dumps({
             'stream': True,
             'max_tokens': 4096,
